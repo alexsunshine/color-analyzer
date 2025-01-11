@@ -1,70 +1,77 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { AudioAnalyzer } from './audioAnalyzer';
-import { ColorVisualizer } from './colorVisualizer';
-
 const audioAnalyzer = new AudioAnalyzer();
-const colorVisualizer = new ColorVisualizer();
+const colorVisualizer = new ColorVisualizer('colorCanvas');
 
-export default function SoundColorAnalyzer() {
-  const [isRunning, setIsRunning] = useState(false);
-  const animationId = useRef(null);
+let isRunning = false;
+let animationId;
 
-  useEffect(() => {
-    return () => {
-      if (animationId.current) {
-        cancelAnimationFrame(animationId.current);
-      }
-    };
-  }, []);
+document.getElementById('startButton').addEventListener('click', startAnalysis);
+document.getElementById('stopButton').addEventListener('click', stopAnalysis);
+document.getElementById('saveButton').addEventListener('click', saveSession);
+document.getElementById('loadButton').addEventListener('click', loadSession);
+document.getElementById('exportButton').addEventListener('click', exportToCSV);
 
-  async function startAnalysis() {
+async function startAnalysis() {
     if (!isRunning) {
-      await audioAnalyzer.start();
-      setIsRunning(true);
-      animate();
+        try {
+            await audioAnalyzer.start();
+            isRunning = true;
+            document.getElementById('startButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+            animate();
+        } catch (error) {
+            console.error('Error starting audio analysis:', error);
+            alert('No se pudo acceder al micrófono. Por favor, asegúrate de que tienes permisos de micrófono habilitados.');
+        }
     }
-  }
+}
 
-  function stopAnalysis() {
+function stopAnalysis() {
     if (isRunning) {
-      audioAnalyzer.stop();
-      setIsRunning(false);
-      if (animationId.current) {
-        cancelAnimationFrame(animationId.current);
-      }
+        audioAnalyzer.stop();
+        isRunning = false;
+        document.getElementById('startButton').disabled = false;
+        document.getElementById('stopButton').disabled = true;
+        cancelAnimationFrame(animationId);
     }
-  }
+}
 
-  function animate() {
+function animate() {
     const pitch = audioAnalyzer.analyze();
     colorVisualizer.update(pitch);
-    animationId.current = requestAnimationFrame(animate);
-  }
+    animationId = requestAnimationFrame(animate);
+}
 
-  function saveSession() {
+function saveSession() {
     const colors = colorVisualizer.getColors();
     const blob = new Blob([JSON.stringify(colors)], {type: 'application/json'});
     saveAs(blob, 'session.json');
-  }
+}
 
-  async function loadSession() {
-    try {
-      const [fileHandle] = await window.showOpenFilePicker();
-      const file = await fileHandle.getFile();
-      const contents = await file.text();
-      const colors = JSON.parse(contents);
-      colorVisualizer.setColors(colors);
-    } catch (error) {
-      console.error('Error loading session:', error);
-    }
-  }
+function loadSession() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                const colors = JSON.parse(contents);
+                colorVisualizer.setColors(colors);
+            };
+            reader.readAsText(file);
+        }
+    };
+    input.click();
+}
 
-  function exportToCSV() {
+function exportToCSV() {
     const colors = colorVisualizer.getColors();
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "R,G,B\n";
     colors.forEach(color => {
-      csvContent += `${color[0]},${color[1]},${color[2]}\n`;
+        csvContent += `${color[0]},${color[1]},${color[2]}\n`;
     });
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -73,20 +80,17 @@ export default function SoundColorAnalyzer() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }
-
-  return (
-    <div className="container">
-      <h1>Analizador de Sonido a Color</h1>
-      <div className="controls">
-        <button onClick={startAnalysis} disabled={isRunning}>Iniciar</button>
-        <button onClick={stopAnalysis} disabled={!isRunning}>Detener</button>
-        <button onClick={saveSession}>Guardar Sesión</button>
-        <button onClick={loadSession}>Cargar Sesión</button>
-        <button onClick={exportToCSV}>Exportar a CSV</button>
-      </div>
-      <canvas id="colorCanvas" ref={colorVisualizer.canvasRef}></canvas>
-    </div>
-  );
 }
+
+// Prevenir el zoom en doble toque en dispositivos móviles
+document.addEventListener('touchstart', function(event) {
+    if (event.touches.length > 1) {
+        event.preventDefault();
+    }
+}, { passive: false });
+
+// Desactivar el desplazamiento del documento al arrastrar en el canvas
+document.getElementById('colorCanvas').addEventListener('touchmove', function(event) {
+    event.preventDefault();
+}, { passive: false });
 
